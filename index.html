@@ -194,19 +194,47 @@
                 
                 この曖昧な可能性のあるフィードバックを、デザイナーがクライアントに提案できる、具体的で実行可能、かつ明確に区別された3〜4個のUI/UXデザイン提案のリストに翻訳してください。提案は具体的で、専門知識のない人にも理解しやすいようにしてください。`;
 
-                const model = ai.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+                const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
                 const result = await model.generateContent(prompt);
                 const response = await result.response;
                 const text = response.text();
                 
-                // Simple parsing for proposals
-                const proposals = [
-                    { title: "AI提案 1", description: text.substring(0, 100) + "..." },
-                    { title: "AI提案 2", description: "詳細な提案内容がここに表示されます。" },
-                    { title: "AI提案 3", description: "追加の提案内容がここに表示されます。" }
-                ];
+                // Parse the AI response to extract proposals
+                const lines = text.split('\n').filter(line => line.trim());
+                const proposals = [];
                 
-                return proposals;
+                let currentProposal = null;
+                for (const line of lines) {
+                    // Look for numbered items or bullet points
+                    if (line.match(/^[1-9]\.|^[\*\-]/)) {
+                        if (currentProposal) {
+                            proposals.push(currentProposal);
+                        }
+                        currentProposal = {
+                            title: line.replace(/^[1-9]\.|^[\*\-]/, '').trim().substring(0, 50),
+                            description: ''
+                        };
+                    } else if (currentProposal && line.trim()) {
+                        currentProposal.description += (currentProposal.description ? ' ' : '') + line.trim();
+                    }
+                }
+                
+                if (currentProposal) {
+                    proposals.push(currentProposal);
+                }
+                
+                // If no structured proposals found, create them from the text
+                if (proposals.length === 0) {
+                    const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+                    for (let i = 0; i < Math.min(3, sentences.length); i++) {
+                        proposals.push({
+                            title: `提案 ${i + 1}`,
+                            description: sentences[i].trim()
+                        });
+                    }
+                }
+                
+                return proposals.slice(0, 4); // Return max 4 proposals
 
             } catch (error) {
                 console.error('デザイン提案の生成中にエラーが発生しました:', error);
@@ -243,7 +271,7 @@
                 - CSSのプロパティ名（例: \`fontSize\`, \`color\`, \`margin\`）や具体的な値（例: \`18px\`, \`#333333\`）を提示する。
                 `;
 
-                const model = ai.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+                const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
                 const result = await model.generateContent(prompt);
                 const response = await result.response;
                 return response.text().trim();
@@ -880,8 +908,14 @@
                 
                 // Proposals section
                 (generatedProposals.length > 0 || manualProposals.length > 0) && createElement('div', null,
-                    createElement('h3', { className: "text-sm font-medium text-slate-700 mb-2" }, 
-                        generatedProposals.length > 0 ? "AI生成提案" : "提案"
+                    createElement('div', { className: "flex items-center justify-between mb-2" },
+                        createElement('h3', { className: "text-sm font-medium text-slate-700" }, 
+                            generatedProposals.length > 0 ? "AI生成提案" : "提案"
+                        ),
+                        userRole === 'Designer' && point.status !== FeedbackStatus.CLOSED && createElement('button', {
+                            onClick: () => setShowManualInput(!showManualInput),
+                            className: "text-sm text-indigo-600 hover:text-indigo-700"
+                        }, showManualInput ? "キャンセル" : "+ 提案を追加")
                     ),
                     createElement('div', { className: "space-y-3" },
                         [...generatedProposals, ...manualProposals].map(proposal => {
@@ -943,34 +977,29 @@
                                 rows: 2
                             })
                         ),
-                        createElement(Button, {
-                            onClick: handleClientSubmitResponse,
-                            disabled: selectedClientProposals.length === 0,
-                            className: "w-full"
-                        }, "選択した提案で進める")
+                        createElement('div', { className: "flex gap-2" },
+                            selectedClientProposals.length > 0 && createElement(Button, {
+                                onClick: handleClientSubmitResponse,
+                                className: "flex-1"
+                            }, "選択した提案で進める"),
+                            createElement(Button, {
+                                onClick: () => {
+                                    onUpdatePoint({
+                                        ...point,
+                                        status: FeedbackStatus.NEEDS_REVISION,
+                                        revisionComment: clientComment || "提示された提案では要望に合いません。別の提案をお願いします。"
+                                    });
+                                },
+                                variant: 'outline',
+                                className: "flex-1"
+                            }, "別の提案を依頼")
+                        )
                     )
                 ),
 
                 // Manual input section
-                showManualInput && userRole === 'Designer' && createElement('div', { className: "border border-amber-300 bg-amber-50 p-4 rounded-md" },
-                    createElement('div', { className: "flex items-start gap-2 mb-3" },
-                        createElement('svg', {
-                            xmlns: "http://www.w3.org/2000/svg",
-                            fill: "none",
-                            viewBox: "0 0 24 24",
-                            strokeWidth: 1.5,
-                            stroke: "currentColor",
-                            className: "w-5 h-5 text-amber-600 mt-0.5"
-                        }, createElement('path', {
-                            strokeLinecap: "round",
-                            strokeLinejoin: "round",
-                            d: "M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"
-                        })),
-                        createElement('div', null,
-                            createElement('h3', { className: "text-sm font-medium text-slate-700" }, "AI提案の生成に失敗しました"),
-                            createElement('p', { className: "text-sm text-slate-600 mt-1" }, "手動で提案を入力してください。")
-                        )
-                    ),
+                showManualInput && userRole === 'Designer' && createElement('div', { className: "border border-indigo-300 bg-indigo-50 p-4 rounded-md mt-3" },
+                    createElement('h3', { className: "text-sm font-medium text-slate-700 mb-3" }, "手動で提案を追加"),
                     createElement('div', { className: "space-y-3" },
                         createElement('div', null,
                             createElement('label', { className: "block text-sm font-medium text-slate-600 mb-1" }, "提案タイトル"),
@@ -999,6 +1028,13 @@
                             className: "w-full"
                         }, "提案を追加")
                     )
+                ),
+
+                // Revision request display
+                point.status === FeedbackStatus.NEEDS_REVISION && point.revisionComment && createElement('div', { className: "bg-orange-50 p-4 rounded-md" },
+                    createElement('h3', { className: "text-sm font-medium text-slate-700 mb-2" }, "クライアントからの修正依頼"),
+                    createElement('p', { className: "text-sm text-slate-600" }, point.revisionComment),
+                    userRole === 'Designer' && createElement('p', { className: "text-xs text-slate-500 mt-2" }, "新しい提案を作成してください。")
                 ),
 
                 // Agreement summary and task generation for PENDING_CLIENT_APPROVAL status
