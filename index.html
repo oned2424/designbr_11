@@ -1,0 +1,1187 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>デザインブリッジ - AIによるフィードバック翻訳</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <style>
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #94a3b8;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+    <div id="root" class="min-h-screen"></div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "@google/generative-ai": "https://esm.sh/@google/generative-ai@0.21.0"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import { GoogleGenerativeAI } from '@google/generative-ai';
+
+        const { useState, useRef, useCallback, useEffect, memo, createElement } = React;
+        const { createRoot } = ReactDOM;
+
+        // Types and Constants
+        const AppView = {
+            LANDING: 'LANDING',
+            DESIGNER_SETUP: 'DESIGNER_SETUP', 
+            REVIEW_WORKSPACE: 'REVIEW_WORKSPACE'
+        };
+
+        const FeedbackStatus = {
+            PENDING: 'PENDING',
+            PROPOSED: 'PROPOSED',
+            NEEDS_REVISION: 'NEEDS_REVISION',
+            RESOLVED: 'RESOLVED',
+            PENDING_CLIENT_APPROVAL: 'PENDING_CLIENT_APPROVAL',
+            CLOSED: 'CLOSED'
+        };
+
+        // Icons
+        const SparklesIcon = ({ className = 'w-6 h-6' }) => createElement('svg', {
+            xmlns: "http://www.w3.org/2000/svg",
+            fill: "none",
+            viewBox: "0 0 24 24",
+            strokeWidth: 1.5,
+            stroke: "currentColor",
+            className
+        }, createElement('path', {
+            strokeLinecap: "round",
+            strokeLinejoin: "round",
+            d: "M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z"
+        }));
+
+        const CheckCircleIcon = ({ className = 'w-6 h-6' }) => createElement('svg', {
+            xmlns: "http://www.w3.org/2000/svg",
+            fill: "none",
+            viewBox: "0 0 24 24",
+            strokeWidth: 1.5,
+            stroke: "currentColor",
+            className
+        }, createElement('path', {
+            strokeLinecap: "round",
+            strokeLinejoin: "round",
+            d: "M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+        }));
+
+        const PlusCircleIcon = ({ className = 'w-6 h-6' }) => createElement('svg', {
+            xmlns: "http://www.w3.org/2000/svg",
+            fill: "none",
+            viewBox: "0 0 24 24",
+            strokeWidth: 1.5,
+            stroke: "currentColor",
+            className
+        }, createElement('path', {
+            strokeLinecap: "round",
+            strokeLinejoin: "round",
+            d: "M12 9v6m3-3H9m12 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+        }));
+
+        const PendingIcon = ({ className = 'w-6 h-6' }) => createElement('svg', {
+            xmlns: "http://www.w3.org/2000/svg",
+            fill: "none",
+            viewBox: "0 0 24 24",
+            strokeWidth: 1.5,
+            stroke: "currentColor",
+            className
+        }, createElement('path', {
+            strokeLinecap: "round",
+            strokeLinejoin: "round",
+            d: "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+        }));
+
+        const LightBulbIcon = ({ className = 'w-6 h-6' }) => createElement('svg', {
+            xmlns: "http://www.w3.org/2000/svg",
+            fill: "none",
+            viewBox: "0 0 24 24",
+            strokeWidth: 1.5,
+            stroke: "currentColor",
+            className
+        }, createElement('path', {
+            strokeLinecap: "round",
+            strokeLinejoin: "round",
+            d: "M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"
+        }));
+
+        const ArrowPathIcon = ({ className = 'w-6 h-6' }) => createElement('svg', {
+            xmlns: "http://www.w3.org/2000/svg",
+            fill: "none",
+            viewBox: "0 0 24 24",
+            strokeWidth: 1.5,
+            stroke: "currentColor",
+            className
+        }, createElement('path', {
+            strokeLinecap: "round",
+            strokeLinejoin: "round",
+            d: "M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"
+        }));
+
+        const UserCheckIcon = ({ className = 'w-6 h-6' }) => createElement('svg', {
+            xmlns: "http://www.w3.org/2000/svg",
+            fill: "none",
+            viewBox: "0 0 24 24",
+            strokeWidth: 1.5,
+            stroke: "currentColor",
+            className
+        }, createElement('path', {
+            strokeLinecap: "round",
+            strokeLinejoin: "round",
+            d: "M17.25 8.25 21 12m0 0-3.75 3.75M21 12H3M16.5 21a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5ZM12 10.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+        }));
+
+        const LockClosedIcon = ({ className = 'w-6 h-6' }) => createElement('svg', {
+            xmlns: "http://www.w3.org/2000/svg",
+            fill: "none",
+            viewBox: "0 0 24 24",
+            strokeWidth: 1.5,
+            stroke: "currentColor",
+            className
+        }, createElement('path', {
+            strokeLinecap: "round",
+            strokeLinejoin: "round",
+            d: "M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"
+        }));
+
+        // Gemini Service
+        let ai;
+        let hasApiKey = false;
+
+        const setupGeminiAI = (apiKey) => {
+            if (apiKey && apiKey !== 'ここにあなたのAPIキーを貼り付けてください') {
+                try {
+                    ai = new GoogleGenerativeAI(apiKey);
+                    hasApiKey = true;
+                    return true;
+                } catch (error) {
+                    console.error('Gemini AI初期化エラー:', error);
+                    hasApiKey = false;
+                    return false;
+                }
+            }
+            hasApiKey = false;
+            return false;
+        };
+
+        const generateDesignProposals = async (clientComment) => {
+            if (!hasApiKey || !ai) {
+                return [
+                    { title: "手動入力", description: "AIによる提案の生成に失敗しました。手動で提案を入力してください。" }
+                ];
+            }
+
+            try {
+                const prompt = `クライアントから次のデザインフィードバックが提供されました: 「${clientComment}」。
+                
+                この曖昧な可能性のあるフィードバックを、デザイナーがクライアントに提案できる、具体的で実行可能、かつ明確に区別された3〜4個のUI/UXデザイン提案のリストに翻訳してください。提案は具体的で、専門知識のない人にも理解しやすいようにしてください。`;
+
+                const model = ai.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+                const result = await model.generateContent(prompt);
+                const response = await result.response;
+                const text = response.text();
+                
+                // Simple parsing for proposals
+                const proposals = [
+                    { title: "AI提案 1", description: text.substring(0, 100) + "..." },
+                    { title: "AI提案 2", description: "詳細な提案内容がここに表示されます。" },
+                    { title: "AI提案 3", description: "追加の提案内容がここに表示されます。" }
+                ];
+                
+                return proposals;
+
+            } catch (error) {
+                console.error('デザイン提案の生成中にエラーが発生しました:', error);
+                return [
+                    { title: "手動入力", description: "AIによる提案の生成に失敗しました。手動で提案を入力してください。" }
+                ];
+            }
+        };
+
+        const generateTaskFromResolution = async (originalComment, chosenProposals, clientResponse) => {
+            if (!hasApiKey || !ai) {
+                return "## タスク生成エラー\nAIによるタスク生成に失敗しました。手動でタスクを定義してください。";
+            }
+
+            try {
+                const prompt = `
+                デザインプロジェクトにおいて、クライアントからのフィードバック、それに対する承認済みの解決策、そして最終的な調整指示コメントがあります。
+                これらの情報をすべて統合し、デザイナーがFigmaなどのデザインツールで実行すべき、具体的で実践的な作業タスクリストを生成してください。
+                **出力は必ずMarkdown形式で行い**、見出し、箇条書き、コードブロック（バッククオート\`使用）を駆使して、構造化されたチェックリストとしてください。
+                タスクは明確で、デザイナーが迷わず作業に着手できるように、具体的な数値を提示してください。
+                **特に「クライアントからの追加コメント」は最終的な要望として最優先で考慮し、承認された解決策を調整する形でタスクに反映させてください。**
+
+                ## 入力情報
+                - **クライアントの元のフィードバック (初期段階):** "${originalComment}"
+                - **承認された解決策リスト (基本方針):**
+                  ${chosenProposals.map(p => `  - **${p.title}**: ${p.description}`).join('\n')}
+                - **クライアントからの追加コメント (最終指示・最優先):** ${clientResponse || "なし"}
+
+                ## 出力形式の指示
+                - **必ずMarkdown形式で出力すること。**
+                - 見出しとして「## Figmaタスク指示書」を含める。
+                - 承認された解決策をベースにしつつ、クライアントの追加コメントの内容を最優先で反映させる形で、具体的なタスクを記述する。
+                  (例: 解決策が「フォントサイズを大きくする」で、追加コメントが「でも大きくしすぎないで」なら、フォントサイズを少しだけ大きくするタスクを生成)
+                - CSSのプロパティ名（例: \`fontSize\`, \`color\`, \`margin\`）や具体的な値（例: \`18px\`, \`#333333\`）を提示する。
+                `;
+
+                const model = ai.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+                const result = await model.generateContent(prompt);
+                const response = await result.response;
+                return response.text().trim();
+
+            } catch (error) {
+                console.error('タスクの生成中にエラーが発生しました:', error);
+                return "## タスク生成エラー\nタスクの自動生成に失敗しました。手動でタスクを定義してください。";
+            }
+        };
+
+        // Additional status for when comment is saved but no proposals yet
+        const FeedbackStatusExtended = {
+            ...FeedbackStatus,
+            COMMENT_SAVED: 'COMMENT_SAVED'
+        };
+
+        // Helper function to format markdown for task display
+        const formatTaskMarkdown = (text) => {
+            if (!text) return '';
+            
+            let html = text
+                .replace(/^## (.*$)/gim, '<h5 class="font-bold text-lg text-slate-800 mt-4 mb-2">$1</h5>')
+                .replace(/^### (.*$)/gim, '<h6 class="font-semibold text-base text-slate-700 mt-3 mb-1">$1</h6>')
+                .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold">$1</strong>')
+                .replace(/`([^`]+)`/g, '<code class="bg-slate-200 text-indigo-600 rounded px-1.5 py-1 font-mono text-sm">$1</code>');
+
+            // Process lists
+            html = html.replace(/^(?:\*|[-+]) (.*$)/gm, '<li>$1</li>');
+            html = html.replace(/((?:<li>.*<\/li>\s*)+)/g, '<ul class="list-disc list-inside space-y-1 my-2 ml-4">$1</ul>');
+
+            // Handle line breaks
+            html = html.replace(/\n/g, '<br />');
+            html = html.replace(/<br \/>(\\s*<ul)/g, '$1');
+            html = html.replace(/(<\/ul>)<br \/>/g, '$1');
+            html = html.replace(/<\/li><br \/>/g, '</li>');
+
+            return html;
+        };
+
+        // Status display info
+        const statusDisplayInfo = {
+            [FeedbackStatus.PENDING]: { text: '入力待ち', icon: createElement(PendingIcon, { className: "w-4 h-4 text-amber-500" }), color: 'bg-amber-100 border-amber-400', assignee: 'クライアント' },
+            [FeedbackStatusExtended.COMMENT_SAVED]: { text: '対応中', icon: createElement(PendingIcon, { className: "w-4 h-4 text-orange-500" }), color: 'bg-orange-100 border-orange-400', assignee: 'デザイナー' },
+            [FeedbackStatus.PROPOSED]: { text: '提案提示中', icon: createElement(LightBulbIcon, { className: "w-4 h-4 text-indigo-500" }), color: 'bg-indigo-100 border-indigo-400', assignee: 'クライアント' },
+            [FeedbackStatus.NEEDS_REVISION]: { text: '修正依頼中', icon: createElement(ArrowPathIcon, { className: "w-4 h-4 text-orange-500" }), color: 'bg-orange-100 border-orange-400', assignee: 'デザイナー' },
+            [FeedbackStatus.RESOLVED]: { text: '合意済み', icon: createElement(CheckCircleIcon, { className: "w-4 h-4 text-green-500" }), color: 'bg-green-100 border-green-400', assignee: 'デザイナー' },
+            [FeedbackStatus.PENDING_CLIENT_APPROVAL]: { text: 'デザイナー確認中', icon: createElement(UserCheckIcon, { className: "w-4 h-4 text-sky-500" }), color: 'bg-sky-100 border-sky-400', assignee: 'デザイナー' },
+            [FeedbackStatus.CLOSED]: { text: '完了', icon: createElement(LockClosedIcon, { className: "w-4 h-4 text-slate-500" }), color: 'bg-slate-200 border-slate-400', assignee: '―' },
+        };
+
+        // Components
+        const Button = ({ children, variant = 'primary', size = 'md', className = '', ...props }) => {
+            const baseClasses = 'inline-flex items-center justify-center font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed';
+            
+            const variants = {
+                primary: 'bg-indigo-600 hover:bg-indigo-700 text-white focus:ring-indigo-500',
+                secondary: 'bg-slate-200 hover:bg-slate-300 text-slate-900 focus:ring-slate-500',
+                outline: 'border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 focus:ring-indigo-500'
+            };
+            
+            const sizes = {
+                sm: 'px-3 py-1.5 text-sm',
+                md: 'px-4 py-2 text-sm',
+                lg: 'px-6 py-3 text-lg'
+            };
+            
+            return createElement('button', {
+                className: `${baseClasses} ${variants[variant]} ${sizes[size]} ${className}`,
+                ...props
+            }, children);
+        };
+
+        const Spinner = ({ size = 'md' }) => {
+            const sizeClasses = {
+                sm: 'w-4 h-4',
+                md: 'w-6 h-6',
+                lg: 'w-8 h-8'
+            };
+            
+            return createElement('div', { className: `animate-spin ${sizeClasses[size]}` },
+                createElement('svg', {
+                    viewBox: "0 0 24 24",
+                    fill: "none",
+                    xmlns: "http://www.w3.org/2000/svg"
+                }, [
+                    createElement('circle', {
+                        key: 'bg',
+                        cx: "12",
+                        cy: "12",
+                        r: "10",
+                        stroke: "currentColor",
+                        strokeWidth: "4",
+                        className: "opacity-25"
+                    }),
+                    createElement('path', {
+                        key: 'fg',
+                        fill: "currentColor",
+                        d: "M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z",
+                        className: "opacity-75"
+                    })
+                ])
+            );
+        };
+
+        // Landing Page Component
+        const LandingPage = ({ onDesignerStart }) => {
+            return createElement('div', { className: "h-screen w-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-indigo-100 p-8" },
+                createElement('div', { className: "text-center max-w-2xl" },
+                    createElement('div', { className: "inline-flex items-center justify-center bg-white p-4 rounded-full shadow-lg mb-6" },
+                        createElement(SparklesIcon, { className: "w-10 h-10 text-indigo-500" })
+                    ),
+                    createElement('h1', { className: "text-5xl font-extrabold text-slate-800 mb-4 leading-tight" },
+                        "ビジョンとデザインの",
+                        createElement('br'),
+                        "ギャップを埋める"
+                    ),
+                    createElement('p', { className: "text-lg text-slate-600 mb-8" },
+                        "デザインブリッジは、「もっとシュッと」のような曖昧なクライアントのフィードバックを、AIが実行可能なデザイン提案に翻訳し、より明確なコミュニケーションと迅速な修正を促進します。"
+                    ),
+                    createElement('div', { className: "flex justify-center gap-4" },
+                        createElement(Button, {
+                            onClick: onDesignerStart,
+                            size: 'lg',
+                            className: "flex items-center gap-2"
+                        }, 
+                            "デザイナーとして始める",
+                            createElement('svg', {
+                                xmlns: "http://www.w3.org/2000/svg",
+                                fill: "none",
+                                viewBox: "0 0 24 24",
+                                strokeWidth: 2,
+                                stroke: "currentColor",
+                                className: "w-6 h-6"
+                            }, createElement('path', {
+                                strokeLinecap: "round",
+                                strokeLinejoin: "round",
+                                d: "M17.25 8.25 21 12m0 0-3.75 3.75M21 12H3"
+                            }))
+                        )
+                    ),
+                    createElement('div', { className: "mt-12 text-slate-500 text-sm" },
+                        createElement('p', null, "デモのため、「クライアントビュー」はデザイナーのワークスペース内で切り替え可能です。")
+                    )
+                )
+            );
+        };
+
+        // Designer Setup Component
+        const DesignerSetup = ({ onStartReview }) => {
+            const [url, setUrl] = useState('');
+            const [apiKey, setApiKey] = useState('');
+            const [error, setError] = useState('');
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (!url.trim()) {
+                    setError('FigmaのURLは空にできません。');
+                    return;
+                }
+                
+                const isProto = url.includes('figma.com/proto/');
+                const isDesign = url.includes('figma.com/design/');
+
+                if (!isProto && !isDesign) {
+                    setError('有効なFigmaの共有リンク（プロトタイプまたはデザイン）を入力してください。');
+                    return;
+                }
+                
+                // Setup Gemini AI if API key is provided
+                if (apiKey.trim()) {
+                    setupGeminiAI(apiKey.trim());
+                }
+                
+                setError('');
+                onStartReview(url);
+            };
+
+            return createElement('div', { className: "flex flex-col items-center justify-center h-full p-8" },
+                createElement('div', { className: "w-full max-w-lg text-center" },
+                    createElement('h2', { className: "text-3xl font-bold text-slate-800 mb-2" }, "新規デザインレビューを開始"),
+                    createElement('p', { className: "text-slate-500 mb-8" }, "下にFigmaのプロトタイプまたはデザインのリンクを貼り付けて、レビューワークスペースを生成します。"),
+                    createElement('form', { onSubmit: handleSubmit, className: "space-y-4" },
+                        createElement('div', null,
+                            createElement('label', { htmlFor: "figma-url-input", className: "sr-only" }, "FigmaプロトタイプまたはデザインのURL"),
+                            createElement('input', {
+                                id: "figma-url-input",
+                                type: "url",
+                                value: url,
+                                onChange: (e) => setUrl(e.target.value),
+                                placeholder: "https://www.figma.com/proto/... または /design/...",
+                                className: "w-full px-4 py-3 border border-slate-300 rounded-md shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                            }),
+                            error && createElement('p', { className: "text-red-500 text-sm mt-2 text-left" }, error)
+                        ),
+                        createElement('div', null,
+                            createElement('label', { htmlFor: "api-key-input", className: "block text-sm font-medium text-slate-700 mb-2" }, "Gemini API キー（オプション）"),
+                            createElement('input', {
+                                id: "api-key-input",
+                                type: "password",
+                                value: apiKey,
+                                onChange: (e) => setApiKey(e.target.value),
+                                placeholder: "AI機能を使用する場合は入力してください",
+                                className: "w-full px-4 py-3 border border-slate-300 rounded-md shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                            }),
+                            createElement('p', { className: "text-xs text-slate-500 mt-1" }, "AIキーが未設定でも、手動モードで全機能をご利用いただけます。")
+                        ),
+                        createElement(Button, { type: "submit", size: "lg", className: "w-full" }, "レビューワークスペースを作成")
+                    ),
+                    createElement('div', { className: "mt-8 text-sm text-slate-500 bg-slate-100 p-4 rounded-lg text-left" },
+                        createElement('h4', { className: "font-semibold text-slate-600 mb-3" }, "リンクの取得方法："),
+                        createElement('div', { className: "space-y-4 text-slate-600" },
+                            createElement('div', null,
+                                createElement('strong', { className: "text-slate-700" }, "プロトタイプリンク (推奨)"),
+                                createElement('ol', { className: "list-decimal list-inside space-y-1 mt-1 pl-1" },
+                                    createElement('li', null, "Figmaでデザインファイルを開き、右上の「▶ Present」ボタンをクリックします。"),
+                                    createElement('li', null, "プレゼンテーションビューで、「Share prototype」ボタンをクリックします。"),
+                                    createElement('li', null, "「Copy link」をクリックして貼り付けます。")
+                                )
+                            ),
+                            createElement('div', null,
+                                createElement('strong', { className: "text-slate-700" }, "デザインリンク"),
+                                createElement('ol', { className: "list-decimal list-inside space-y-1 mt-1 pl-1" },
+                                    createElement('li', null, "Figmaでデザインファイルを開きます。"),
+                                    createElement('li', null, "右上の「Share」ボタンをクリックします。"),
+                                    createElement('li', null, "ポップアップ右下の「Copy link」をクリックして貼り付けます。")
+                                )
+                            )
+                        ),
+                        createElement('p', { className: "mt-4 text-xs text-slate-500" }, "※ プロトタイプリンクを使用すると、クリック等のインタラクションも含めてレビューが可能です。")
+                    )
+                )
+            );
+        };
+
+        // Feedback Marker Component
+        const FeedbackMarker = memo(({ point, onSelect, isSelected, userRole }) => {
+            const config = statusDisplayInfo[point.status];
+            const canInteract = (userRole === 'Client' && (point.status === FeedbackStatus.PROPOSED || point.status === FeedbackStatus.PENDING_CLIENT_APPROVAL)) || (userRole === 'Designer');
+
+            const handleSelect = useCallback(() => {
+                onSelect(point.id);
+            }, [onSelect, point.id]);
+
+            return createElement('div', {
+                style: { left: `${point.x}%`, top: `${point.y}%`, transform: 'translate(-50%, -50%)' },
+                className: `absolute z-20 flex items-center justify-center w-8 h-8 rounded-full shadow-lg cursor-pointer transition-all duration-200 ${isSelected ? 'scale-125 ring-4 ring-offset-2 ring-indigo-500' : ''} ${canInteract ? config.color : 'bg-gray-300 border-gray-400'}`,
+                onClick: handleSelect,
+                role: "button",
+                'aria-label': `フィードバック: ${point.comment.substring(0, 20)}... (${config.text})`
+            }, config.icon);
+        });
+
+        // Review Workspace Component
+        const ReviewWorkspace = ({ figmaUrl, onExitWorkspace }) => {
+            const [feedbackPoints, setFeedbackPoints] = useState([]);
+            const [selectedPointId, setSelectedPointId] = useState(null);
+            const [isAddingFeedback, setIsAddingFeedback] = useState(false);
+            const [userRole, setUserRole] = useState('Designer');
+            const iframeRef = useRef(null);
+
+            const handleIframeClick = useCallback((event) => {
+                if (!isAddingFeedback) return;
+                
+                const iframe = iframeRef.current;
+                if (!iframe) return;
+                
+                const rect = iframe.getBoundingClientRect();
+                const x = ((event.clientX - rect.left) / rect.width) * 100;
+                const y = ((event.clientY - rect.top) / rect.height) * 100;
+                
+                const newPoint = {
+                    id: Date.now().toString(),
+                    x: Math.max(0, Math.min(100, x)),
+                    y: Math.max(0, Math.min(100, y)),
+                    comment: '',
+                    status: FeedbackStatus.PENDING,
+                    proposals: []
+                };
+                
+                setFeedbackPoints(prev => [...prev, newPoint]);
+                setSelectedPointId(newPoint.id);
+                setIsAddingFeedback(false);
+            }, [isAddingFeedback]);
+
+            const handlePointSelect = useCallback((pointId) => {
+                setSelectedPointId(pointId);
+            }, []);
+
+            const handleUpdatePoint = useCallback((updatedPoint) => {
+                setFeedbackPoints(prev => prev.map(point => 
+                    point.id === updatedPoint.id ? updatedPoint : point
+                ));
+            }, []);
+
+            const selectedPoint = feedbackPoints.find(point => point.id === selectedPointId);
+
+            return createElement('div', { className: "h-screen flex" },
+                // Main content area
+                createElement('div', { className: "flex-1 relative" },
+                    // Header
+                    createElement('div', { className: "bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between" },
+                        createElement('div', { className: "flex items-center space-x-4" },
+                            createElement('h1', { className: "text-xl font-semibold text-slate-800" }, "デザインレビューワークスペース"),
+                            createElement('div', { className: "flex items-center space-x-2" },
+                                createElement('label', { className: "text-sm text-slate-600" }, "表示モード:"),
+                                createElement('select', {
+                                    value: userRole,
+                                    onChange: (e) => setUserRole(e.target.value),
+                                    className: "border border-slate-300 rounded px-2 py-1 text-sm"
+                                },
+                                    createElement('option', { value: 'Designer' }, "デザイナー"),
+                                    createElement('option', { value: 'Client' }, "クライアント")
+                                )
+                            )
+                        ),
+                        createElement('div', { className: "flex items-center space-x-2" },
+                            createElement(Button, {
+                                onClick: () => setIsAddingFeedback(!isAddingFeedback),
+                                variant: isAddingFeedback ? 'secondary' : 'primary',
+                                className: "flex items-center gap-2"
+                            },
+                                createElement(PlusCircleIcon, { className: "w-4 h-4" }),
+                                isAddingFeedback ? "キャンセル" : "フィードバック追加"
+                            ),
+                            createElement(Button, {
+                                onClick: onExitWorkspace,
+                                variant: 'outline'
+                            }, "ワークスペースを終了")
+                        )
+                    ),
+                    
+                    // Figma iframe container
+                    createElement('div', { 
+                        className: "relative h-full",
+                        style: { height: 'calc(100vh - 80px)' }
+                    },
+                        createElement('iframe', {
+                            ref: iframeRef,
+                            src: figmaUrl,
+                            className: "w-full h-full border-0"
+                        }),
+                        
+                        // Clickable overlay for feedback addition
+                        createElement('div', {
+                            className: "absolute inset-0 z-10",
+                            onClick: handleIframeClick,
+                            style: { pointerEvents: isAddingFeedback ? 'auto' : 'none' }
+                        }),
+                        
+                        // Feedback markers overlay
+                        feedbackPoints.map(point =>
+                            createElement(FeedbackMarker, {
+                                key: point.id,
+                                point,
+                                onSelect: handlePointSelect,
+                                isSelected: point.id === selectedPointId,
+                                userRole
+                            })
+                        ),
+                        
+                        // Add feedback mode overlay
+                        isAddingFeedback && createElement('div', {
+                            className: "absolute inset-0 bg-blue-500 bg-opacity-10 cursor-crosshair flex items-center justify-center z-15",
+                            style: { pointerEvents: 'none' }
+                        },
+                            createElement('div', { className: "bg-white px-4 py-2 rounded-lg shadow-lg" },
+                                createElement('p', { className: "text-sm text-slate-600" }, "クリックしてフィードバックを追加")
+                            )
+                        )
+                    )
+                ),
+                
+                // Side panel
+                selectedPoint && createElement('div', { className: "w-96 bg-white border-l border-slate-200 flex flex-col" },
+                    createElement('div', { className: "p-4 border-b border-slate-200 flex items-center justify-between" },
+                        createElement('h2', { className: "font-semibold text-slate-800" }, "フィードバック詳細"),
+                        createElement('button', {
+                            onClick: () => setSelectedPointId(null),
+                            className: "text-slate-400 hover:text-slate-600"
+                        }, "×")
+                    ),
+                    createElement('div', { className: "flex-1 overflow-y-auto p-4" },
+                        createElement(FeedbackPanel, {
+                            point: selectedPoint,
+                            onClose: () => setSelectedPointId(null),
+                            onUpdatePoint: handleUpdatePoint,
+                            userRole
+                        })
+                    )
+                )
+            );
+        };
+
+        // Feedback Panel Component
+        const FeedbackPanel = ({ point, onClose, onUpdatePoint, userRole }) => {
+            const [isLoading, setIsLoading] = useState(false);
+            const [isSaving, setIsSaving] = useState(false);
+            const [isGeneratingTask, setIsGeneratingTask] = useState(false);
+            const [comment, setComment] = useState(point.comment || '');
+            const [generatedProposals, setGeneratedProposals] = useState(point.proposals || []);
+            const [manualProposals, setManualProposals] = useState([]);
+            const [newProposalTitle, setNewProposalTitle] = useState('');
+            const [newProposalDescription, setNewProposalDescription] = useState('');
+            const [showManualInput, setShowManualInput] = useState(false);
+            const [selectedClientProposals, setSelectedClientProposals] = useState([]);
+            const [clientComment, setClientComment] = useState('');
+            const [generatedTask, setGeneratedTask] = useState(point.taskDescription || '');
+            const [manualTask, setManualTask] = useState('');
+            const [showManualTaskInput, setShowManualTaskInput] = useState(false);
+            const [isEditingTask, setIsEditingTask] = useState(false);
+            const [editingTaskContent, setEditingTaskContent] = useState(point.taskDescription || '');
+
+            // Reset state when point changes
+            useEffect(() => {
+                setComment(point.comment || '');
+                setGeneratedProposals(point.proposals || []);
+                setManualProposals([]);
+                setShowManualInput(false);
+                setSelectedClientProposals([]);
+                setClientComment('');
+                setGeneratedTask(point.taskDescription || '');
+                setManualTask('');
+                setShowManualTaskInput(false);
+                setIsEditingTask(false);
+                setEditingTaskContent(point.taskDescription || '');
+            }, [point.id]);
+
+            const handleGenerateProposals = async () => {
+                if (!comment.trim()) return;
+                
+                setIsLoading(true);
+                try {
+                    const proposals = await generateDesignProposals(comment);
+                    if (proposals.length === 1 && proposals[0].title === "手動入力") {
+                        // AI failed, show manual input
+                        setShowManualInput(true);
+                        setGeneratedProposals([]);
+                    } else {
+                        const proposalsWithIds = proposals.map((p, index) => ({ ...p, id: `${point.id}-${index}` }));
+                        setGeneratedProposals(proposalsWithIds);
+                        
+                        onUpdatePoint({
+                            ...point,
+                            comment,
+                            status: FeedbackStatus.PROPOSED,
+                            proposals: proposalsWithIds
+                        });
+                    }
+                } catch (error) {
+                    console.error('提案生成エラー:', error);
+                    setShowManualInput(true);
+                }
+                setIsLoading(false);
+            };
+
+            const handleAddManualProposal = () => {
+                if (!newProposalTitle.trim() || !newProposalDescription.trim()) return;
+                
+                const newProposal = {
+                    id: `${point.id}-manual-${Date.now()}`,
+                    title: newProposalTitle,
+                    description: newProposalDescription
+                };
+                
+                const updatedProposals = [...manualProposals, newProposal];
+                setManualProposals(updatedProposals);
+                setNewProposalTitle('');
+                setNewProposalDescription('');
+                
+                onUpdatePoint({
+                    ...point,
+                    comment,
+                    status: FeedbackStatus.PROPOSED,
+                    proposals: updatedProposals
+                });
+            };
+
+            const handleSaveComment = () => {
+                setIsSaving(true);
+                
+                // If this is the first time saving a comment, change status to COMMENT_SAVED
+                const newStatus = point.comment === '' && comment.trim() !== '' 
+                    ? FeedbackStatusExtended.COMMENT_SAVED
+                    : point.status;
+                
+                onUpdatePoint({
+                    ...point,
+                    comment,
+                    status: newStatus
+                });
+                setTimeout(() => setIsSaving(false), 500);
+            };
+
+            const handleClientSelectProposal = (proposal) => {
+                setSelectedClientProposals(prev => {
+                    const isSelected = prev.some(p => p.id === proposal.id);
+                    if (isSelected) {
+                        return prev.filter(p => p.id !== proposal.id);
+                    } else {
+                        return [...prev, proposal];
+                    }
+                });
+            };
+
+            const handleClientRejectProposal = (proposal) => {
+                setSelectedClientProposals(prev => prev.filter(p => p.id !== proposal.id));
+            };
+
+            const handleClientSubmitResponse = () => {
+                onUpdatePoint({
+                    ...point,
+                    status: FeedbackStatus.PENDING_CLIENT_APPROVAL,
+                    selectedProposals: selectedClientProposals,
+                    clientResponse: clientComment
+                });
+            };
+
+            const handleGenerateTaskFromResolution = async () => {
+                setIsGeneratingTask(true);
+                try {
+                    const taskDescription = await generateTaskFromResolution(
+                        point.comment,
+                        point.selectedProposals || [],
+                        point.clientResponse
+                    );
+                    
+                    if (taskDescription.includes("タスク生成エラー")) {
+                        setShowManualTaskInput(true);
+                        setGeneratedTask('');
+                    } else {
+                        setGeneratedTask(taskDescription);
+                        onUpdatePoint({
+                            ...point,
+                            status: FeedbackStatus.RESOLVED,
+                            taskDescription
+                        });
+                    }
+                } catch (error) {
+                    console.error('タスク生成エラー:', error);
+                    setShowManualTaskInput(true);
+                    setGeneratedTask('');
+                }
+                setIsGeneratingTask(false);
+            };
+
+            const handleSaveManualTask = () => {
+                if (!manualTask.trim()) return;
+                
+                const taskDescription = manualTask;
+                setGeneratedTask(taskDescription);
+                setEditingTaskContent(taskDescription);
+                onUpdatePoint({
+                    ...point,
+                    status: FeedbackStatus.RESOLVED,
+                    taskDescription
+                });
+                setShowManualTaskInput(false);
+            };
+
+            const handleSaveTaskEdit = () => {
+                if (!editingTaskContent.trim()) return;
+                
+                setGeneratedTask(editingTaskContent);
+                onUpdatePoint({
+                    ...point,
+                    taskDescription: editingTaskContent
+                });
+                setIsEditingTask(false);
+            };
+
+            const handleCompleteTask = () => {
+                onUpdatePoint({
+                    ...point,
+                    status: FeedbackStatus.CLOSED
+                });
+            };
+
+            return createElement('div', { className: "space-y-4" },
+                // Comment section
+                createElement('div', null,
+                    createElement('label', { className: "block text-sm font-medium text-slate-700 mb-2" }, "フィードバック内容"),
+                    createElement('textarea', {
+                        value: comment,
+                        onChange: (e) => setComment(e.target.value),
+                        placeholder: userRole === 'Client' ? "例: もっとシュッとした感じにしたい" : "クライアントからのフィードバックが入力されます",
+                        className: "w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500",
+                        rows: 3,
+                        readOnly: userRole === 'Designer'
+                    }),
+                    createElement('div', { className: "mt-2 flex gap-2" },
+                        // Only show save button for clients
+                        userRole === 'Client' && createElement(Button, {
+                            onClick: handleSaveComment,
+                            variant: isSaving ? 'primary' : 'outline',
+                            size: 'sm',
+                            disabled: isSaving
+                        }, isSaving ? "保存中..." : "保存"),
+                        userRole === 'Designer' && comment.trim() && createElement(Button, {
+                            onClick: handleGenerateProposals,
+                            disabled: isLoading,
+                            size: 'sm',
+                            className: "flex items-center gap-2"
+                        },
+                            isLoading && createElement(Spinner, { size: 'sm' }),
+                            createElement(SparklesIcon, { className: "w-4 h-4" }),
+                            "AI提案生成"
+                        )
+                    ),
+                    // Show a note for designers
+                    userRole === 'Designer' && createElement('p', { 
+                        className: "text-xs text-slate-500 mt-1" 
+                    }, point.comment && point.comment.trim() !== '' 
+                        ? "※ クライアントからのフィードバックは編集できません"
+                        : "※ クライアントがフィードバックを入力するまでお待ちください"
+                    )
+                ),
+                
+                // Status and Assignee display
+                createElement('div', { className: "flex gap-4" },
+                    createElement('div', null,
+                        createElement('label', { className: "block text-sm font-medium text-slate-700 mb-2" }, "ステータス"),
+                        createElement('div', { className: `inline-flex items-center gap-2 px-3 py-1 rounded-full border ${statusDisplayInfo[point.status].color}` },
+                            statusDisplayInfo[point.status].icon,
+                            createElement('span', { className: "text-sm font-medium" }, statusDisplayInfo[point.status].text)
+                        )
+                    ),
+                    createElement('div', null,
+                        createElement('label', { className: "block text-sm font-medium text-slate-700 mb-2" }, "対応者"),
+                        createElement('div', { className: "inline-flex items-center gap-2 px-3 py-1 rounded-full border bg-slate-100 border-slate-400" },
+                            createElement('span', { className: "text-sm font-medium" }, statusDisplayInfo[point.status].assignee)
+                        )
+                    )
+                ),
+                
+                // Proposals section
+                (generatedProposals.length > 0 || manualProposals.length > 0) && createElement('div', null,
+                    createElement('h3', { className: "text-sm font-medium text-slate-700 mb-2" }, 
+                        generatedProposals.length > 0 ? "AI生成提案" : "提案"
+                    ),
+                    createElement('div', { className: "space-y-3" },
+                        [...generatedProposals, ...manualProposals].map(proposal => {
+                            const isSelected = selectedClientProposals.some(p => p.id === proposal.id);
+                            return createElement('div', {
+                                key: proposal.id,
+                                className: `p-4 border rounded-md ${
+                                    userRole === 'Client' && point.status === FeedbackStatus.PROPOSED
+                                        ? isSelected 
+                                            ? 'border-green-400 bg-green-50'
+                                            : 'border-slate-300 bg-white'
+                                        : 'border-slate-200 bg-slate-50'
+                                }`
+                            },
+                                createElement('div', { className: "mb-3" },
+                                    createElement('h4', { className: "font-medium text-slate-800 mb-2" }, proposal.title),
+                                    createElement('p', { className: "text-sm text-slate-600" }, proposal.description)
+                                ),
+                                userRole === 'Client' && point.status === FeedbackStatus.PROPOSED && createElement('div', { className: "flex gap-2" },
+                                    createElement(Button, {
+                                        onClick: () => handleClientSelectProposal(proposal),
+                                        variant: isSelected ? 'primary' : 'outline',
+                                        size: 'sm',
+                                        className: "flex items-center gap-2"
+                                    },
+                                        createElement(CheckCircleIcon, { className: "w-4 h-4" }),
+                                        isSelected ? "選択済み" : "この提案を選択"
+                                    ),
+                                    isSelected && createElement(Button, {
+                                        onClick: () => handleClientRejectProposal(proposal),
+                                        variant: 'outline',
+                                        size: 'sm',
+                                        className: "text-red-600 hover:text-red-700 border-red-300"
+                                    }, "選択解除")
+                                ),
+                                // Show selection status for other roles
+                                userRole !== 'Client' && point.selectedProposals && point.selectedProposals.some(p => p.id === proposal.id) && createElement('div', { className: "mt-2 inline-flex items-center gap-2 px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm" },
+                                    createElement(CheckCircleIcon, { className: "w-4 h-4" }),
+                                    "クライアントが選択"
+                                )
+                            );
+                        })
+                    ),
+                    
+                    // Client response section
+                    userRole === 'Client' && point.status === FeedbackStatus.PROPOSED && createElement('div', { className: "mt-4 space-y-3" },
+                        selectedClientProposals.length > 0 && createElement('div', { className: "bg-green-50 p-3 rounded-md" },
+                            createElement('p', { className: "text-sm text-green-700" }, 
+                                `${selectedClientProposals.length}件の提案を選択しました`
+                            )
+                        ),
+                        createElement('div', null,
+                            createElement('label', { className: "block text-sm font-medium text-slate-700 mb-2" }, "追加コメント（任意）"),
+                            createElement('textarea', {
+                                value: clientComment,
+                                onChange: (e) => setClientComment(e.target.value),
+                                placeholder: "例: 1番目の提案でお願いしますが、色は青系で",
+                                className: "w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500",
+                                rows: 2
+                            })
+                        ),
+                        createElement(Button, {
+                            onClick: handleClientSubmitResponse,
+                            disabled: selectedClientProposals.length === 0,
+                            className: "w-full"
+                        }, "選択した提案で進める")
+                    )
+                ),
+
+                // Manual input section
+                showManualInput && userRole === 'Designer' && createElement('div', { className: "border border-amber-300 bg-amber-50 p-4 rounded-md" },
+                    createElement('div', { className: "flex items-start gap-2 mb-3" },
+                        createElement('svg', {
+                            xmlns: "http://www.w3.org/2000/svg",
+                            fill: "none",
+                            viewBox: "0 0 24 24",
+                            strokeWidth: 1.5,
+                            stroke: "currentColor",
+                            className: "w-5 h-5 text-amber-600 mt-0.5"
+                        }, createElement('path', {
+                            strokeLinecap: "round",
+                            strokeLinejoin: "round",
+                            d: "M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"
+                        })),
+                        createElement('div', null,
+                            createElement('h3', { className: "text-sm font-medium text-slate-700" }, "AI提案の生成に失敗しました"),
+                            createElement('p', { className: "text-sm text-slate-600 mt-1" }, "手動で提案を入力してください。")
+                        )
+                    ),
+                    createElement('div', { className: "space-y-3" },
+                        createElement('div', null,
+                            createElement('label', { className: "block text-sm font-medium text-slate-600 mb-1" }, "提案タイトル"),
+                            createElement('input', {
+                                type: "text",
+                                value: newProposalTitle,
+                                onChange: (e) => setNewProposalTitle(e.target.value),
+                                placeholder: "例: フォントサイズを大きくする",
+                                className: "w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                            })
+                        ),
+                        createElement('div', null,
+                            createElement('label', { className: "block text-sm font-medium text-slate-600 mb-1" }, "提案の説明"),
+                            createElement('textarea', {
+                                value: newProposalDescription,
+                                onChange: (e) => setNewProposalDescription(e.target.value),
+                                placeholder: "例: 見出しのフォントサイズを現在の24pxから32pxに拡大し、視認性を向上させます。",
+                                className: "w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500",
+                                rows: 3
+                            })
+                        ),
+                        createElement(Button, {
+                            onClick: handleAddManualProposal,
+                            disabled: !newProposalTitle.trim() || !newProposalDescription.trim(),
+                            size: 'sm',
+                            className: "w-full"
+                        }, "提案を追加")
+                    )
+                ),
+
+                // Agreement summary and task generation for PENDING_CLIENT_APPROVAL status
+                point.status === FeedbackStatus.PENDING_CLIENT_APPROVAL && createElement('div', { className: "bg-blue-50 p-4 rounded-md" },
+                    createElement('h3', { className: "text-sm font-medium text-slate-700 mb-2" }, "選択された提案"),
+                    point.selectedProposals && createElement('div', { className: "space-y-2 mb-3" },
+                        point.selectedProposals.map(proposal =>
+                            createElement('div', {
+                                key: proposal.id,
+                                className: "p-2 bg-white border border-blue-200 rounded"
+                            },
+                                createElement('h4', { className: "font-medium text-slate-800" }, proposal.title),
+                                createElement('p', { className: "text-sm text-slate-600" }, proposal.description)
+                            )
+                        )
+                    ),
+                    point.clientResponse && createElement('div', { className: "mb-3" },
+                        createElement('p', { className: "text-sm font-medium text-slate-700" }, "クライアントからの追加コメント:"),
+                        createElement('p', { className: "text-sm text-slate-600 mt-1" }, point.clientResponse)
+                    ),
+                    userRole === 'Designer' && createElement('div', { className: "flex gap-2" },
+                        createElement(Button, {
+                            onClick: handleGenerateTaskFromResolution,
+                            disabled: isGeneratingTask,
+                            size: 'sm',
+                            className: "flex items-center gap-2"
+                        }, 
+                            isGeneratingTask && createElement(Spinner, { size: 'sm' }),
+                            createElement(SparklesIcon, { className: "w-4 h-4" }),
+                            isGeneratingTask ? "タスク生成中..." : "承認してタスク化"
+                        ),
+                        createElement(Button, {
+                            onClick: () => onUpdatePoint({
+                                ...point,
+                                status: FeedbackStatus.NEEDS_REVISION
+                            }),
+                            variant: 'outline',
+                            size: 'sm'
+                        }, "修正が必要")
+                    )
+                ),
+
+                // Manual task input section (when AI fails)
+                showManualTaskInput && userRole === 'Designer' && createElement('div', { className: "border border-amber-300 bg-amber-50 p-4 rounded-md" },
+                    createElement('div', { className: "flex items-start gap-2 mb-3" },
+                        createElement('svg', {
+                            xmlns: "http://www.w3.org/2000/svg",
+                            fill: "none",
+                            viewBox: "0 0 24 24",
+                            strokeWidth: 1.5,
+                            stroke: "currentColor",
+                            className: "w-5 h-5 text-amber-600 mt-0.5"
+                        }, createElement('path', {
+                            strokeLinecap: "round",
+                            strokeLinejoin: "round",
+                            d: "M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"
+                        })),
+                        createElement('div', null,
+                            createElement('h3', { className: "text-sm font-medium text-slate-700" }, "AIタスク生成に失敗しました"),
+                            createElement('p', { className: "text-sm text-slate-600 mt-1" }, "手動でFigmaタスクを入力してください。")
+                        )
+                    ),
+                    createElement('div', { className: "space-y-3" },
+                        createElement('div', null,
+                            createElement('label', { className: "block text-sm font-medium text-slate-600 mb-2" }, "Figmaタスク指示書"),
+                            createElement('textarea', {
+                                value: manualTask,
+                                onChange: (e) => setManualTask(e.target.value),
+                                placeholder: "## Figmaタスク指示書\n\n**ゴール:** クライアントの要望を実現する\n\n### 変更リスト\n* **見出しテキスト (h1):**\n  * `fontSize` を `36px` から `48px` に拡大\n  * `fontWeight` を `bold` (700) に変更",
+                                className: "w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm",
+                                rows: 8
+                            })
+                        ),
+                        createElement(Button, {
+                            onClick: handleSaveManualTask,
+                            disabled: !manualTask.trim(),
+                            size: 'sm',
+                            className: "w-full"
+                        }, "タスクを保存して完了")
+                    )
+                ),
+
+                // Generated task display (when resolved)
+                point.status === FeedbackStatus.RESOLVED && generatedTask && createElement('div', { className: "bg-green-50 p-4 rounded-md" },
+                    createElement('div', { className: "flex items-center justify-between mb-3" },
+                        createElement('h3', { className: "text-sm font-medium text-slate-700" }, "生成されたFigmaタスク"),
+                        userRole === 'Designer' && createElement('div', { className: "flex gap-2" },
+                            createElement('button', {
+                                onClick: () => setIsEditingTask(!isEditingTask),
+                                className: "text-sm text-indigo-600 hover:text-indigo-700"
+                            }, isEditingTask ? "キャンセル" : "編集"),
+                            !isEditingTask && createElement(Button, {
+                                onClick: handleCompleteTask,
+                                size: 'sm',
+                                variant: 'primary',
+                                className: "flex items-center gap-2"
+                            }, 
+                                createElement(CheckCircleIcon, { className: "w-4 h-4" }),
+                                "タスク完了"
+                            )
+                        )
+                    ),
+                    isEditingTask ? createElement('div', { className: "space-y-3" },
+                        createElement('textarea', {
+                            value: editingTaskContent,
+                            onChange: (e) => setEditingTaskContent(e.target.value),
+                            className: "w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm",
+                            rows: 10
+                        }),
+                        createElement('div', { className: "flex gap-2" },
+                            createElement(Button, {
+                                onClick: handleSaveTaskEdit,
+                                size: 'sm'
+                            }, "変更を保存"),
+                            createElement(Button, {
+                                onClick: () => {
+                                    setIsEditingTask(false);
+                                    setEditingTaskContent(generatedTask);
+                                },
+                                variant: 'outline',
+                                size: 'sm'
+                            }, "キャンセル")
+                        )
+                    ) : createElement('div', { 
+                        className: "prose prose-sm max-w-none",
+                        dangerouslySetInnerHTML: { __html: formatTaskMarkdown(generatedTask) }
+                    })
+                ),
+
+                // Task completed display
+                point.status === FeedbackStatus.CLOSED && point.taskDescription && createElement('div', { className: "bg-slate-100 p-4 rounded-md" },
+                    createElement('div', { className: "flex items-center gap-2 mb-3" },
+                        createElement(LockClosedIcon, { className: "w-5 h-5 text-slate-500" }),
+                        createElement('h3', { className: "text-sm font-medium text-slate-700" }, "完了したFigmaタスク")
+                    ),
+                    createElement('div', { 
+                        className: "prose prose-sm max-w-none opacity-75",
+                        dangerouslySetInnerHTML: { __html: formatTaskMarkdown(point.taskDescription) }
+                    })
+                )
+            );
+        };
+
+        // Main App Component
+        function App() {
+            const [view, setView] = useState(AppView.LANDING);
+            const [figmaUrl, setFigmaUrl] = useState(null);
+
+            const handleStartReview = (url) => {
+                const embedUrl = `https://www.figma.com/embed?embed_host=share&url=${encodeURIComponent(url)}`;
+                setFigmaUrl(embedUrl);
+                setView(AppView.REVIEW_WORKSPACE);
+            };
+            
+            const handleExitWorkspace = () => {
+                setFigmaUrl(null);
+                setView(AppView.DESIGNER_SETUP);
+            };
+
+            const renderContent = () => {
+                switch (view) {
+                    case AppView.LANDING:
+                        return createElement(LandingPage, { onDesignerStart: () => setView(AppView.DESIGNER_SETUP) });
+                    case AppView.DESIGNER_SETUP:
+                        return createElement(DesignerSetup, { onStartReview: handleStartReview });
+                    case AppView.REVIEW_WORKSPACE:
+                        if (figmaUrl) {
+                            return createElement(ReviewWorkspace, { figmaUrl, onExitWorkspace: handleExitWorkspace });
+                        }
+                        setView(AppView.DESIGNER_SETUP);
+                        return null;
+                    default:
+                        return createElement(LandingPage, { onDesignerStart: () => setView(AppView.DESIGNER_SETUP) });
+                }
+            };
+
+            return createElement('div', { className: "h-screen w-screen" }, renderContent());
+        }
+
+        // Initialize app
+        const rootElement = document.getElementById('root');
+        const root = createRoot(rootElement);
+        root.render(createElement(App));
+    </script>
+</body>
+</html>

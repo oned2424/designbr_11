@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>デザインブリッジ - AIによるフィードバック翻訳</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <style>
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #94a3b8;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+    <div id="root" class="min-h-screen"></div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "@google/generative-ai": "https://esm.sh/@google/generative-ai@0.1.3"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import { GoogleGenerativeAI } from '@google/generative-ai';
+
+        const { useState } = React;
+        const { createRoot } = ReactDOM;
+
+        function App() {
+            const [apiKey, setApiKey] = useState('');
+            const [isSetup, setIsSetup] = useState(false);
+            const [clientName, setClientName] = useState('');
+            const [projectType, setProjectType] = useState('');
+            const [designerName, setDesignerName] = useState('');
+            const [feedback, setFeedback] = useState('');
+            const [translatedFeedback, setTranslatedFeedback] = useState('');
+            const [isLoading, setIsLoading] = useState(false);
+            const [error, setError] = useState('');
+
+            const handleSetup = (e) => {
+                e.preventDefault();
+                if (apiKey && clientName && projectType && designerName) {
+                    setIsSetup(true);
+                    setError('');
+                }
+            };
+
+            const translateFeedback = async () => {
+                if (!feedback.trim() || !apiKey) return;
+
+                setIsLoading(true);
+                setError('');
+                
+                try {
+                    const genAI = new GoogleGenerativeAI(apiKey);
+                    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+                    const prompt = `
+あなたは${designerName}さんのアシスタントとして、${clientName}様からのフィードバックを翻訳します。
+
+プロジェクト：${projectType}
+クライアント：${clientName}様
+デザイナー：${designerName}さん
+
+以下のフィードバックを、デザイナーが理解しやすい具体的で建設的な内容に翻訳してください：
+
+"${feedback}"
+
+翻訳のポイント：
+- 曖昧な表現を具体的な改善提案に変換
+- 感情的な表現を客観的な要望に変換
+- デザイナーが実装しやすい形で整理
+- 専門用語を適切に使用
+- 優先順位が分かるように整理
+
+翻訳結果：
+`;
+
+                    const result = await model.generateContent(prompt);
+                    const response = await result.response;
+                    setTranslatedFeedback(response.text());
+                } catch (error) {
+                    console.error('Translation error:', error);
+                    if (error.message.includes('API_KEY_INVALID')) {
+                        setError('APIキーが無効です。正しいキーを入力してください。');
+                    } else if (error.message.includes('QUOTA_EXCEEDED')) {
+                        setError('APIの使用制限に達しました。しばらく待ってから再試行してください。');
+                    } else {
+                        setError('翻訳中にエラーが発生しました: ' + error.message);
+                    }
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            if (!isSetup) {
+                return React.createElement('div', { className: "min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 p-4" },
+                    React.createElement('div', { className: "max-w-md mx-auto mt-16" },
+                        React.createElement('div', { className: "bg-white rounded-2xl shadow-xl p-8" },
+                            React.createElement('h1', { className: "text-2xl font-bold text-gray-800 mb-2" }, "デザインブリッジ"),
+                            React.createElement('p', { className: "text-sm text-gray-600 mb-6" }, 
+                                "クライアントの曖昧なフィードバックを、デザイナーが理解しやすい具体的な指示に翻訳します。"
+                            ),
+                            React.createElement('div', { className: "bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6" },
+                                React.createElement('p', { className: "text-sm text-blue-800" },
+                                    "APIキーの取得方法: ",
+                                    React.createElement('a', { 
+                                        href: "https://makersuite.google.com/app/apikey",
+                                        target: "_blank",
+                                        className: "underline font-medium"
+                                    }, "Google AI Studio"),
+                                    " でAPIキーを作成してください。"
+                                )
+                            ),
+                            React.createElement('form', { onSubmit: handleSetup, className: "space-y-4" },
+                                React.createElement('div', null,
+                                    React.createElement('label', { className: "block text-sm font-medium text-gray-700 mb-1" }, "Gemini API Key"),
+                                    React.createElement('input', {
+                                        type: "password",
+                                        value: apiKey,
+                                        onChange: (e) => setApiKey(e.target.value),
+                                        className: "w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                                        placeholder: "AIzaSy...",
+                                        required: true
+                                    })
+                                ),
+                                React.createElement('div', null,
+                                    React.createElement('label', { className: "block text-sm font-medium text-gray-700 mb-1" }, "クライアント名"),
+                                    React.createElement('input', {
+                                        type: "text",
+                                        value: clientName,
+                                        onChange: (e) => setClientName(e.target.value),
+                                        className: "w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                                        placeholder: "山田太郎",
+                                        required: true
+                                    })
+                                ),
+                                React.createElement('div', null,
+                                    React.createElement('label', { className: "block text-sm font-medium text-gray-700 mb-1" }, "プロジェクトタイプ"),
+                                    React.createElement('input', {
+                                        type: "text",
+                                        value: projectType,
+                                        onChange: (e) => setProjectType(e.target.value),
+                                        className: "w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                                        placeholder: "Webサイトリニューアル",
+                                        required: true
+                                    })
+                                ),
+                                React.createElement('div', null,
+                                    React.createElement('label', { className: "block text-sm font-medium text-gray-700 mb-1" }, "デザイナー名"),
+                                    React.createElement('input', {
+                                        type: "text",
+                                        value: designerName,
+                                        onChange: (e) => setDesignerName(e.target.value),
+                                        className: "w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                                        placeholder: "鈴木花子",
+                                        required: true
+                                    })
+                                ),
+                                React.createElement('button', {
+                                    type: "submit",
+                                    className: "w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium py-3 rounded-lg hover:from-blue-600 hover:to-indigo-700 transition-all"
+                                }, "開始")
+                            )
+                        )
+                    )
+                );
+            }
+
+            return React.createElement('div', { className: "min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 p-4" },
+                React.createElement('div', { className: "max-w-4xl mx-auto mt-8" },
+                    React.createElement('div', { className: "bg-white rounded-2xl shadow-xl p-8" },
+                        React.createElement('div', { className: "flex items-center justify-between mb-8" },
+                            React.createElement('div', null,
+                                React.createElement('h1', { className: "text-2xl font-bold text-gray-800" }, "デザインブリッジ"),
+                                React.createElement('button', {
+                                    onClick: () => {
+                                        setIsSetup(false);
+                                        setFeedback('');
+                                        setTranslatedFeedback('');
+                                        setError('');
+                                    },
+                                    className: "text-sm text-gray-500 hover:text-gray-700 mt-2"
+                                }, "設定を変更")
+                            ),
+                            React.createElement('div', { className: "text-sm text-gray-600 text-right" },
+                                React.createElement('p', null, `クライアント: ${clientName}様`),
+                                React.createElement('p', null, `プロジェクト: ${projectType}`),
+                                React.createElement('p', null, `デザイナー: ${designerName}さん`)
+                            )
+                        ),
+                        error && React.createElement('div', { className: "bg-red-50 border border-red-200 rounded-lg p-4 mb-6" },
+                            React.createElement('p', { className: "text-sm text-red-800" }, error)
+                        ),
+                        React.createElement('div', { className: "grid md:grid-cols-2 gap-6" },
+                            React.createElement('div', null,
+                                React.createElement('h2', { className: "text-lg font-semibold mb-3" }, "クライアントのフィードバック"),
+                                React.createElement('textarea', {
+                                    value: feedback,
+                                    onChange: (e) => setFeedback(e.target.value),
+                                    className: "w-full h-64 p-4 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                                    placeholder: "例: なんかいい感じにして、もっとポップな感じで、でも落ち着いた感じも残して..."
+                                }),
+                                React.createElement('button', {
+                                    onClick: translateFeedback,
+                                    disabled: isLoading || !feedback.trim(),
+                                    className: "mt-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium px-6 py-3 rounded-lg hover:from-blue-600 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                },
+                                    isLoading ? '翻訳中...' : '翻訳'
+                                )
+                            ),
+                            React.createElement('div', null,
+                                React.createElement('h2', { className: "text-lg font-semibold mb-3" }, `${designerName}さんへの翻訳`),
+                                React.createElement('div', { className: "w-full h-64 p-4 bg-gray-50 border border-gray-200 rounded-lg overflow-y-auto" },
+                                    translatedFeedback ? 
+                                        React.createElement('div', { className: "whitespace-pre-wrap" }, translatedFeedback) :
+                                        React.createElement('p', { className: "text-gray-400" }, "翻訳結果がここに表示されます")
+                                ),
+                                translatedFeedback && React.createElement('button', {
+                                    onClick: () => {
+                                        navigator.clipboard.writeText(translatedFeedback);
+                                        alert('翻訳結果をコピーしました！');
+                                    },
+                                    className: "mt-4 bg-gray-600 text-white font-medium px-4 py-2 rounded-lg hover:bg-gray-700 transition-all"
+                                }, "コピー")
+                            )
+                        )
+                    )
+                )
+            );
+        }
+
+        // DOMが読み込まれてからアプリをマウント
+        document.addEventListener('DOMContentLoaded', function() {
+            const container = document.getElementById('root');
+            const root = createRoot(container);
+            root.render(React.createElement(App));
+        });
+    </script>
+</body>
+</html>

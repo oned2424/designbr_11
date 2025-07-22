@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Page</title>
+</head>
+<body>
+    <h1>テストページ</h1>
+    <p>このページが表示されれば、ブラウザは正常に動作しています。</p>
+    <p>現在の時刻: <span id="time"></span></p>
+    <script>
+        document.getElementById('time').textContent = new Date().toLocaleString('ja-JP');
+    </script>
+</body>
+</html>

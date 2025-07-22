@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>デザインブリッジ - AIによるフィードバック翻訳</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <style>
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #94a3b8;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+    <div id="root" class="min-h-screen"></div>
+
+    <script>
+        console.log('スクリプト開始');
+        
+        // エラーハンドリング
+        window.addEventListener('error', function(e) {
+            console.error('エラー詳細:', e.message, e.filename, e.lineno, e.colno, e.error);
+        });
+
+        const { useState } = React;
+        const { createRoot } = ReactDOM;
+
+        function App() {
+            console.log('App コンポーネント レンダリング');
+            
+            const [apiKey, setApiKey] = useState('');
+            const [isSetup, setIsSetup] = useState(false);
+            const [clientName, setClientName] = useState('');
+            const [projectType, setProjectType] = useState('');
+            const [designerName, setDesignerName] = useState('');
+            const [feedback, setFeedback] = useState('');
+            const [translatedFeedback, setTranslatedFeedback] = useState('');
+            const [isLoading, setIsLoading] = useState(false);
+
+            const handleSetup = (e) => {
+                e.preventDefault();
+                console.log('セットアップ開始', { apiKey: apiKey.length, clientName, projectType, designerName });
+                if (apiKey && clientName && projectType && designerName) {
+                    setIsSetup(true);
+                }
+            };
+
+            const translateFeedback = async () => {
+                if (!feedback.trim() || !apiKey) return;
+
+                setIsLoading(true);
+                console.log('翻訳開始');
+                
+                try {
+                    // Gemini APIの代わりに、一時的にダミーの翻訳を表示
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    const dummyTranslation = `【翻訳されたフィードバック】
+
+${clientName}様からのご要望を整理いたしました：
+
+元のフィードバック: "${feedback}"
+
+具体的な改善提案：
+1. デザインの調整が必要です
+2. より明確な指示に変換しました
+3. ${designerName}さんが実装しやすい形式で整理しました
+
+※注意: これはデモ用のダミー翻訳です。実際の使用にはGemini APIキーが必要です。`;
+                    
+                    setTranslatedFeedback(dummyTranslation);
+                } catch (error) {
+                    console.error('Translation error:', error);
+                    setTranslatedFeedback('翻訳中にエラーが発生しました。');
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            if (!isSetup) {
+                return React.createElement('div', { className: "min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 p-4" },
+                    React.createElement('div', { className: "max-w-md mx-auto mt-16" },
+                        React.createElement('div', { className: "bg-white rounded-2xl shadow-xl p-8" },
+                            React.createElement('h1', { className: "text-2xl font-bold text-gray-800 mb-8" }, "デザインブリッジ"),
+                            React.createElement('form', { onSubmit: handleSetup, className: "space-y-4" },
+                                React.createElement('div', null,
+                                    React.createElement('label', { className: "block text-sm font-medium text-gray-700 mb-1" }, "Gemini API Key"),
+                                    React.createElement('input', {
+                                        type: "password",
+                                        value: apiKey,
+                                        onChange: (e) => setApiKey(e.target.value),
+                                        className: "w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                                        placeholder: "AIzaSy...",
+                                        required: true
+                                    })
+                                ),
+                                React.createElement('div', null,
+                                    React.createElement('label', { className: "block text-sm font-medium text-gray-700 mb-1" }, "クライアント名"),
+                                    React.createElement('input', {
+                                        type: "text",
+                                        value: clientName,
+                                        onChange: (e) => setClientName(e.target.value),
+                                        className: "w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                                        placeholder: "山田太郎",
+                                        required: true
+                                    })
+                                ),
+                                React.createElement('div', null,
+                                    React.createElement('label', { className: "block text-sm font-medium text-gray-700 mb-1" }, "プロジェクトタイプ"),
+                                    React.createElement('input', {
+                                        type: "text",
+                                        value: projectType,
+                                        onChange: (e) => setProjectType(e.target.value),
+                                        className: "w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                                        placeholder: "Webサイトリニューアル",
+                                        required: true
+                                    })
+                                ),
+                                React.createElement('div', null,
+                                    React.createElement('label', { className: "block text-sm font-medium text-gray-700 mb-1" }, "デザイナー名"),
+                                    React.createElement('input', {
+                                        type: "text",
+                                        value: designerName,
+                                        onChange: (e) => setDesignerName(e.target.value),
+                                        className: "w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                                        placeholder: "鈴木花子",
+                                        required: true
+                                    })
+                                ),
+                                React.createElement('button', {
+                                    type: "submit",
+                                    className: "w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium py-3 rounded-lg hover:from-blue-600 hover:to-indigo-700 transition-all"
+                                }, "開始")
+                            )
+                        )
+                    )
+                );
+            }
+
+            return React.createElement('div', { className: "min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 p-4" },
+                React.createElement('div', { className: "max-w-4xl mx-auto mt-8" },
+                    React.createElement('div', { className: "bg-white rounded-2xl shadow-xl p-8" },
+                        React.createElement('div', { className: "flex items-center justify-between mb-8" },
+                            React.createElement('h1', { className: "text-2xl font-bold text-gray-800" }, "デザインブリッジ"),
+                            React.createElement('div', { className: "text-sm text-gray-600" },
+                                React.createElement('p', null, `クライアント: ${clientName}様`),
+                                React.createElement('p', null, `プロジェクト: ${projectType}`)
+                            )
+                        ),
+                        React.createElement('div', { className: "grid md:grid-cols-2 gap-6" },
+                            React.createElement('div', null,
+                                React.createElement('h2', { className: "text-lg font-semibold mb-3" }, "クライアントのフィードバック"),
+                                React.createElement('textarea', {
+                                    value: feedback,
+                                    onChange: (e) => setFeedback(e.target.value),
+                                    className: "w-full h-64 p-4 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                                    placeholder: "なんかいい感じにして..."
+                                }),
+                                React.createElement('button', {
+                                    onClick: translateFeedback,
+                                    disabled: isLoading || !feedback.trim(),
+                                    className: "mt-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium px-6 py-3 rounded-lg hover:from-blue-600 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                },
+                                    isLoading ? '翻訳中...' : '翻訳'
+                                )
+                            ),
+                            React.createElement('div', null,
+                                React.createElement('h2', { className: "text-lg font-semibold mb-3" }, `${designerName}さんへの翻訳`),
+                                React.createElement('div', { className: "w-full h-64 p-4 bg-gray-50 border border-gray-200 rounded-lg overflow-y-auto" },
+                                    translatedFeedback ? 
+                                        React.createElement('div', { className: "whitespace-pre-wrap" }, translatedFeedback) :
+                                        React.createElement('p', { className: "text-gray-400" }, "翻訳結果がここに表示されます")
+                                )
+                            )
+                        )
+                    )
+                )
+            );
+        }
+
+        // DOMが読み込まれてからアプリをマウント
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM読み込み完了');
+            try {
+                const container = document.getElementById('root');
+                if (!container) {
+                    console.error('root要素が見つかりません');
+                    return;
+                }
+                
+                const root = createRoot(container);
+                root.render(React.createElement(App));
+                console.log('アプリケーションをマウントしました');
+            } catch (error) {
+                console.error('マウントエラー:', error);
+            }
+        });
+    </script>
+</body>
+</html>
